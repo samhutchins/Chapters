@@ -1,0 +1,9 @@
+/*
+
+!.gitignore
+!README.md
+!COPYING
+!LICENSE
+
+!src/
+!src/*.py
