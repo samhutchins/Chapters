@@ -6,4 +6,5 @@
 !LICENSE
 
 !src/
+src/*
 !src/*.py
