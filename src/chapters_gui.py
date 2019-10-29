@@ -17,15 +17,15 @@
 import datetime
 import os
 import sys
-from typing import Any, List, Callable, NamedTuple, Optional
+from io import BytesIO
+from typing import Any, List, Callable, NamedTuple, Optional, BinaryIO
 
-from PySide2.QtCore import Signal, QThreadPool, QCoreApplication, QAbstractTableModel, QModelIndex, Qt, QRunnable, \
-    QObject
+from PySide2.QtCore import Signal, QCoreApplication, QAbstractTableModel, QModelIndex, Qt, QObject
 from PySide2.QtGui import QKeySequence
 from PySide2.QtWidgets import QMainWindow, QLineEdit, QSpinBox, QTableView, QWidget, QLabel, QVBoxLayout, \
-    QFileDialog, QDialog, QApplication, QFormLayout
+    QFileDialog, QDialog, QApplication, QFormLayout, QProgressBar
 
-from libchapters import Chapter, MetaData, LibChapters, ApplicationVersion
+from libchapters import Chapter, MetaData, LibChapters, ApplicationVersion, Listener
 
 APPLICATION_NAME = "Chapters"
 APPLICATION_VERSION = ApplicationVersion(1, 0)
@@ -34,9 +34,8 @@ APPLICATION_VERSION = ApplicationVersion(1, 0)
 class MainWindow(QMainWindow):
     def __init__(self):
         QMainWindow.__init__(self)
-        self.lib_chapters = LibChapters()
-        self.task_executor = QThreadPool.globalInstance()
-        self.current_file: Optional[str] = None
+        self.lib_chapters = self.__create_libchapters()
+        self.current_file: Optional[BinaryIO] = None
 
         self.chapters_table_model = ChaptersTableModel()
 
@@ -45,7 +44,6 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(480, 320)
         self.resize(900, 500)
         self.__create_menu()
-        self.__create_status_bar()
 
         self.podcast_title = QLineEdit()
         self.episode_title = QLineEdit()
@@ -56,8 +54,25 @@ class MainWindow(QMainWindow):
         self.chapters_table_view.setModel(self.chapters_table_model)
         self.chapters_table_view.horizontalHeader().setStretchLastSection(True)
 
+        self.progress_bar = QProgressBar()
+
         self.setCentralWidget(self.__create_center_widget())
-        self.centralWidget().setDisabled(True)
+
+        self.__create_status_bar()
+
+    def __create_libchapters(self) -> LibChapters:
+        listener = LibChaptersListener()
+        listener.signals.encode_started.connect(self.__encode_started)
+        listener.signals.encode_progress.connect(self.__encode_progress)
+        listener.signals.encode_complete.connect(self.__encode_complete)
+        listener.signals.read_chapters_started.connect(self.__read_chapters_started)
+        listener.signals.read_chapters_complete.connect(self.__read_chapters_complete)
+        listener.signals.add_metadata_started.connect(self.__add_metadata_started)
+        listener.signals.add_metadata_complete.connect(self.__add_metadata_complete)
+        listener.signals.write_mp3_file_started.connect(self.__write_mp3_started)
+        listener.signals.write_mp3_file_progress.connect(self.__write_mp3_progress)
+        listener.signals.write_mp3_file_complete.connect(self.__write_mp3_complete)
+        return LibChapters(listener)
 
     def __create_center_widget(self) -> QWidget:
         episode_info_pane = QFormLayout()
@@ -73,16 +88,16 @@ class MainWindow(QMainWindow):
 
         return center_widget
 
-    def __create_menu(self) -> None:
+    def __create_menu(self):
         menu_bar = self.menuBar()
         file_menu = menu_bar.addMenu("File")
-        open_action = file_menu.addAction("Open")
-        open_action.setShortcut(QKeySequence("Ctrl+O"))
-        open_action.triggered.connect(self.__open_file)
+        import_action = file_menu.addAction("Import Audio...")
+        import_action.setShortcut(QKeySequence("Ctrl+I"))
+        import_action.triggered.connect(self.__import_audio)
 
-        export_action = file_menu.addAction("Export")
-        export_action.setShortcut(QKeySequence("Ctrl+E"))
-        export_action.triggered.connect(self.__export_file)
+        save_as_action = file_menu.addAction("Save As...")
+        save_as_action.setShortcut(QKeySequence("Ctrl+Shift+S"))
+        save_as_action.triggered.connect(self.__save_current_file)
 
         file_menu.addSeparator()
 
@@ -96,19 +111,13 @@ class MainWindow(QMainWindow):
         help_action.triggered.connect(self.__show_about_dialog)
 
     def __create_status_bar(self):
-        self.statusBar()
+        status_bar = self.statusBar()
+        status_bar.addPermanentWidget(self.progress_bar)
 
-    def __update_table(self) -> None:
-        read_chapters_task = ReadChaptersTask(self.lib_chapters, self.current_file)
-        read_chapters_task.signals.finished.connect(self.chapters_table_model.set_chapters)
-        self.task_executor.start(read_chapters_task)
-
-    def __open_file(self) -> None:
+    def __import_audio(self):
         file, _ = QFileDialog.getOpenFileName(self, filter="*.wav")
         if file:
-            self.current_file = file
             self.setWindowTitle(f"{APPLICATION_NAME} [{os.path.basename(file)}]")
-            self.centralWidget().setDisabled(False)
             guessed_metadata = self.lib_chapters.guess_podcast_info(file)
             if guessed_metadata.podcast_title:
                 self.podcast_title.setText(guessed_metadata.podcast_title)
@@ -119,36 +128,69 @@ class MainWindow(QMainWindow):
             if guessed_metadata.episode_number:
                 self.episode_number.setValue(guessed_metadata.episode_number)
 
-            self.__update_table()
+            self.lib_chapters.read_chapters(file)
+            self.lib_chapters.encode_file(file)
 
-    def __export_file(self) -> None:
-        if self.current_file:
-            file, _ = QFileDialog.getSaveFileName(self, filter="*.mp3")
-            if file:
-                meta_data = MetaData(
-                    podcast_title=self.podcast_title.text(),
-                    episode_title=self.episode_title.text(),
-                    episode_number=self.episode_number.value(),
-                    chapters=self.chapters_table_model.get_chapters())
+    def __encode_started(self):
+        self.progress_bar.setValue(0)
+        self.statusBar().showMessage("Importing file...")
 
-                task = EncoderTask(self.lib_chapters, self.current_file, meta_data, file)
-                task.signals.finished.connect(self.__encode_finished)
-                self.__encode_started(file)
-                self.task_executor.start(task)
+    def __encode_progress(self, progress: int):
+        self.progress_bar.setValue(progress)
 
-    def __show_about_dialog(self) -> None:
-        about_dialog = AboutDialog(self)
-        about_dialog.show()
-
-    def __encode_started(self, output: str):
-        self.centralWidget().setDisabled(True)
-        self.menuBar().setDisabled(True)
-        self.statusBar().showMessage(f"Encoding {os.path.basename(self.current_file)} to {output}")
-
-    def __encode_finished(self):
+    def __encode_complete(self, mp3_data: BytesIO):
         self.centralWidget().setDisabled(False)
         self.menuBar().setDisabled(False)
-        self.statusBar().clearMessage()
+        self.statusBar().showMessage("Import complete")
+        self.current_file = mp3_data
+
+    def __read_chapters_started(self):
+        self.chapters_table_view.setDisabled(True)
+
+    def __read_chapters_complete(self, chapters: List[Chapter]):
+        self.chapters_table_view.setDisabled(False)
+        self.chapters_table_model.set_chapters(chapters)
+
+    def __save_current_file(self):
+        if self.current_file:
+            meta_data = MetaData(
+                podcast_title=self.podcast_title.text(),
+                episode_title=self.episode_title.text(),
+                episode_number=self.episode_number.value(),
+                chapters=self.chapters_table_model.get_chapters())
+
+            self.lib_chapters.add_metadata(self.current_file, meta_data)
+
+    def __add_metadata_started(self):
+        self.progress_bar.setValue(0)
+        self.statusBar().showMessage("Adding metadata...")
+
+    def __add_metadata_complete(self):
+        if isinstance(self.current_file, BytesIO):
+            file, _ = QFileDialog.getSaveFileName(self, filter="*.mp3")
+            if file:
+                self.lib_chapters.write_mp3_data(self.current_file, file)
+        else:
+            self.progress_bar.setValue(100)
+            print("Save complete")
+
+    def __write_mp3_started(self):
+        self.menuBar().setDisabled(True)
+        self.centralWidget().setDisabled(True)
+        self.progress_bar.setValue(0)
+        self.statusBar().showMessage("Saving MP3...")
+
+    def __write_mp3_progress(self, progress: int):
+        self.progress_bar.setValue(progress)
+
+    def __write_mp3_complete(self):
+        self.menuBar().setDisabled(False)
+        self.centralWidget().setDisabled(False)
+        self.statusBar().showMessage("Save complete")
+
+    def __show_about_dialog(self):
+        about_dialog = AboutDialog(self)
+        about_dialog.show()
 
 
 class ChaptersTableModel(QAbstractTableModel):
@@ -161,13 +203,13 @@ class ChaptersTableModel(QAbstractTableModel):
             TableColumn("Name", lambda chapter: chapter.name)
         ]
 
-    def set_chapters(self, chapters: List[Chapter]) -> None:
+    def set_chapters(self, chapters: List[Chapter]):
         self.clear_chapters()
         self.beginInsertRows(QModelIndex(), 0, len(chapters) - 1)
         self.__chapters = list(chapters)
         self.endInsertRows()
 
-    def clear_chapters(self) -> None:
+    def clear_chapters(self):
         self.beginRemoveRows(QModelIndex(), 0, len(self.__chapters) - 1)
         self.__chapters = list()
         self.endRemoveRows()
@@ -220,55 +262,63 @@ class AboutDialog(QDialog):
         self.setLayout(layout)
 
     # override
-    def show(self) -> None:
+    def show(self):
         super().show()
         self.raise_()
         self.activateWindow()
-
-
-class ReadChaptersTaskSignals(QObject):
-    finished = Signal(object)  # List[Chapter]
-
-
-class ReadChaptersTask(QRunnable):
-    def __init__(self, lib_chapters: LibChapters, path_to_wav: str):
-        QRunnable.__init__(self)
-        self.signals = ReadChaptersTaskSignals()
-        self.lib_chapters = lib_chapters
-        self.path_to_wav = path_to_wav
-
-    # override
-    def run(self):
-        chapters = self.lib_chapters.read_chapters(self.path_to_wav)
-        self.signals.finished.emit(chapters)
-
-
-class EncoderTaskSignals(QObject):
-    finished = Signal()
-
-
-class EncoderTask(QRunnable):
-    def __init__(self, lib_chapters: LibChapters, path_to_wav: str, meta_data: MetaData, path_to_output: str):
-        QRunnable.__init__(self)
-        self.signals = EncoderTaskSignals()
-        self.lib_chapters = lib_chapters
-        self.path_to_wav = path_to_wav
-        self.meta_data = meta_data
-        self.path_to_output = path_to_output
-
-    # override
-    def run(self):
-        audio_data = self.lib_chapters.encode_podcast(self.path_to_wav, self.meta_data)
-        with open(self.path_to_output, "wb") as f:
-            f.write(audio_data.getvalue())
-
-        self.signals.finished.emit()
 
 
 class TableColumn(NamedTuple):
     title: str
     get_data: Callable[[Chapter], str]
     alignment: int = Qt.AlignVCenter
+
+
+class EncoderListenerSignals(QObject):
+    encode_started = Signal()
+    encode_progress = Signal(int)
+    encode_complete = Signal(object)  # BytesIO
+    read_chapters_started = Signal()
+    read_chapters_complete = Signal(object)  # List[Chapter]
+    add_metadata_started = Signal()
+    add_metadata_complete = Signal()
+    write_mp3_file_started = Signal()
+    write_mp3_file_progress = Signal(int)
+    write_mp3_file_complete = Signal()
+
+
+class LibChaptersListener(Listener):
+    signals = EncoderListenerSignals()
+
+    def encode_started(self):
+        self.signals.encode_started.emit()
+
+    def encode_update(self, progress: int):
+        self.signals.encode_progress.emit(progress)
+
+    def encode_complete(self, result: BytesIO):
+        self.signals.encode_complete.emit(result)
+
+    def read_chapters_started(self):
+        self.signals.read_chapters_started.emit()
+
+    def read_chapters_complete(self, chapters: List[Chapter]):
+        self.signals.read_chapters_complete.emit(chapters)
+
+    def add_metadata_started(self):
+        self.signals.add_metadata_started.emit()
+
+    def add_metadata_complete(self):
+        self.signals.add_metadata_complete.emit()
+
+    def write_mp3_file_started(self):
+        self.signals.write_mp3_file_started.emit()
+
+    def write_mp3_file_progress(self, progress: int):
+        self.signals.write_mp3_file_progress.emit(progress)
+
+    def write_mp3_file_complete(self):
+        self.signals.write_mp3_file_complete.emit()
 
 
 if __name__ == "__main__":

@@ -22,11 +22,12 @@ import os
 import re
 import struct
 import wave
+from abc import ABC, abstractmethod
 from ctypes import c_ulong, c_byte, c_ushort, c_long, WinDLL, c_void_p, byref
 from io import BytesIO
 from pathlib import Path
-from subprocess import Popen, PIPE
-from typing import List, Dict, IO, NamedTuple, Optional
+from threading import Thread
+from typing import List, Dict, IO, NamedTuple, Optional, BinaryIO
 from wave import Wave_read
 
 from mutagen import id3
@@ -34,42 +35,55 @@ from mutagen import id3
 __all__ = ["ApplicationVersion",
            "Chapter",
            "MetaData",
-           "LibChapters"]
+           "LibChapters",
+           "Listener"]
 
 
 class LibChapters:
-    def encode_podcast(self, path_to_wav_file: str, meta_data: MetaData) -> BytesIO:
-        wav_file = wave.open(path_to_wav_file)
-        audio_data: BytesIO = self.__encode(wav_file)
-        wav_file.close()
+    def __init__(self, listener: Listener):
+        self.listener = listener
 
-        tags = id3.ID3()
+    def encode_file(self, path_to_wav_file: str):
+        thread = Thread(target=lambda: self.__encode_file(path_to_wav_file),
+                        daemon=True)
+        thread.start()
 
-        if meta_data.podcast_title:
-            tags.add(id3.TPE1(encoding=id3.Encoding.LATIN1, text=meta_data.podcast_title))
+    def read_chapters(self, path_to_wav_file: str):
+        thread = Thread(target=lambda: self.__read_chapters(path_to_wav_file),
+                        daemon=True)
+        thread.start()
 
-        if meta_data.episode_title:
-            tags.add(id3.TIT2(encoding=id3.Encoding.LATIN1, text=meta_data.episode_title))
+    def add_metadata(self, mp3_file: BinaryIO, meta_data: MetaData):
+        thread = Thread(target=lambda: self.__add_metadata(mp3_file, meta_data),
+                        daemon=True)
+        thread.start()
 
-        if meta_data.episode_number:
-            tags.add(id3.TRCK(encoding=id3.Encoding.LATIN1, text=str(meta_data.episode_number)))
+    def write_mp3_data(self, mp3_data: BytesIO, path_to_output: str):
+        thread = Thread(target=lambda: self.__write_mp3_data(mp3_data, path_to_output),
+                        daemon=True)
+        thread.start()
 
-        if meta_data.chapters:
-            toc: List[str] = [f"chp{index}" for index in range(len(meta_data.chapters))]
-            tags.add(id3.CTOC(encoding=id3.Encoding.LATIN1, element_id="toc",
-                              flags=id3.CTOCFlags.TOP_LEVEL | id3.CTOCFlags.ORDERED,
-                              child_element_ids=toc, sub_frames=[]))
+    @staticmethod
+    def guess_podcast_info(path_to_wav: str) -> MetaData:
+        basename = os.path.splitext(os.path.basename(path_to_wav))[0]
+        match_info = re.search("([0-9]{1,3}) *- *(.*)", basename)
 
-            for idx, chapter in enumerate(meta_data.chapters):
-                tags.add(id3.CHAP(encoding=id3.Encoding.LATIN1, element_id=f"chp{idx}",
-                                  start_time=chapter.start, end_time=chapter.end,
-                                  sub_frames=[id3.TIT2(encoding=id3.Encoding.LATIN1, text=chapter.name)]))
+        if match_info:
+            return MetaData(
+                episode_number=int(match_info.group(1)),
+                episode_title=match_info.group(2))
+        else:
+            return MetaData()
 
-        tags.save(audio_data)
+    def __encode_file(self, path_to_wav_file: str):
+        self.listener.encode_started()
+        lame = Lame(self.listener)
+        with wave.open(path_to_wav_file) as wav_file:
+            audio_data: BytesIO = lame.encode(wav_file)
+        self.listener.encode_complete(audio_data)
 
-        return audio_data
-
-    def read_chapters(self, path_to_wav_file: str) -> List[Chapter]:
+    def __read_chapters(self, path_to_wav_file: str):
+        self.listener.read_chapters_started()
         wav_file = wave.open(path_to_wav_file)
         with open(path_to_wav_file, "rb") as fid:
             fsize: int = self.__read_riff_chunk(fid)
@@ -101,7 +115,7 @@ class LibChapters:
             [markersdict[l] for l in markersdict],
             key=lambda k: int(k["timestamp"]))
 
-        ret: List[Chapter] = list()
+        chapters: List[Chapter] = list()
         num_chapters: int = len(sorted_markers)
         for idx, chap in enumerate(sorted_markers):
             if idx + 1 < num_chapters:
@@ -109,82 +123,57 @@ class LibChapters:
             else:
                 next_timestamp = self.__samples_to_millis(wav_file, wav_file.getnframes())
 
-            ret.append(Chapter(int(chap["timestamp"]), next_timestamp, chap["label"]))
+            chapters.append(Chapter(int(chap["timestamp"]), next_timestamp, chap["label"]))
 
         wav_file.close()
-        return ret
+        self.listener.read_chapters_complete(chapters)
 
-    @staticmethod
-    def guess_podcast_info(path_to_wav: str) -> MetaData:
-        basename = os.path.splitext(os.path.basename(path_to_wav))[0]
-        match_info = re.search("([0-9]{1,3}) *- *(.*)", basename)
+    def __add_metadata(self, mp3_data: BinaryIO, meta_data: MetaData):
+        self.listener.add_metadata_started()
+        tags = id3.ID3()
 
-        return MetaData(
-            episode_number=int(match_info.group(1)),
-            episode_title=match_info.group(2))
+        if meta_data.podcast_title:
+            tags.add(id3.TPE1(encoding=id3.Encoding.LATIN1, text=meta_data.podcast_title))
 
-    @staticmethod
-    def __encode(wav_file: Wave_read) -> BytesIO:
-        lame = Lame()
-        return lame.encode(wav_file)
+        if meta_data.episode_title:
+            tags.add(id3.TIT2(encoding=id3.Encoding.LATIN1, text=meta_data.episode_title))
 
-        # TODO threading
-        # num_cpu = os.cpu_count() if not None else 4
-        # bit_depth = wav_file.getsampwidth() * 8
-        # sample_rate = wav_file.getframerate()
-        # num_samples = wav_file.getnframes()
-        # samples_per_chunk = int(LibChapters.__round_up(num_samples, num_cpu) / num_cpu)
-        # output_chunks: List[BytesIO] = list()
-        # threads: List[Thread] = list()
-        #
-        # for i in range(num_cpu):
-        #     wav_file.setpos(samples_per_chunk * i)
-        #     chunk = wav_file.readframes(samples_per_chunk)
-        #     output_chunk = BytesIO()
-        #     output_chunks.append(output_chunk)
-        #     threads.append(Thread(
-        #         target=self.__encode_chunk,
-        #         args=(chunk, output_chunk, bit_depth, sample_rate)
-        #     ))
-        #
-        # for thread in threads:
-        #     thread.start()
-        #
-        # for thread in threads:
-        #     thread.join()
-        #
-        # output_bytes = BytesIO()
-        # for chunk in output_chunks:
-        #     output_bytes.write(chunk.getvalue())
-        #     chunk.close()
-        #
-        # return output_bytes
+        if meta_data.episode_number:
+            tags.add(id3.TRCK(encoding=id3.Encoding.LATIN1, text=str(meta_data.episode_number)))
 
-    @staticmethod
-    def __encode_chunk(chunk: bytes, output: BytesIO, bit_depth: int, sample_rate: int) -> None:
-        command: List[str] = ['lame',
-                              '-r',
-                              '-m', 'm',
-                              '--bitwidth', str(bit_depth),
-                              '-s', str(sample_rate),
-                              '-']
-        process: Popen = Popen(command, stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        mp3_data: bytes = process.communicate(chunk)[0]
-        output.write(mp3_data)
+        if meta_data.chapters:
+            toc: List[str] = [f"chp{index}" for index in range(len(meta_data.chapters))]
+            tags.add(id3.CTOC(encoding=id3.Encoding.LATIN1, element_id="toc",
+                              flags=id3.CTOCFlags.TOP_LEVEL | id3.CTOCFlags.ORDERED,
+                              child_element_ids=toc, sub_frames=[]))
 
-    @staticmethod
-    def __round_up(num: int, target_mutliple: int) -> int:
-        while num % target_mutliple != 0:
-            num += 1
+            for idx, chapter in enumerate(meta_data.chapters):
+                tags.add(id3.CHAP(encoding=id3.Encoding.LATIN1, element_id=f"chp{idx}",
+                                  start_time=chapter.start, end_time=chapter.end,
+                                  sub_frames=[id3.TIT2(encoding=id3.Encoding.LATIN1, text=chapter.name)]))
 
-        return num
+        tags.save(mp3_data)
+        self.listener.add_metadata_complete()
+
+    def __write_mp3_data(self, mp3_data: BytesIO, path_to_output: str):
+        self.listener.write_mp3_file_started()
+        mp3_data.seek(0)
+        total = len(mp3_data.getvalue())
+        with open(path_to_output, "wb") as mp3_file:
+            data = mp3_data.read(4096)
+            while data:
+                mp3_file.write(data)
+                self.listener.write_mp3_file_progress(int(mp3_data.tell() * 100 / total))
+                data = mp3_data.read(4096)
+
+        self.listener.write_mp3_file_complete()
 
     @staticmethod
     def __samples_to_millis(wav_file: Wave_read, samples: int) -> int:
         return int((samples / wav_file.getframerate()) * 1000)
 
     @staticmethod
-    def __skip_unknown_chunk(fid: IO[bytes]) -> None:
+    def __skip_unknown_chunk(fid: IO[bytes]):
         data = fid.read(4)
         size = struct.unpack('<i', data)[0]
         if bool(size & 1):
@@ -217,6 +206,48 @@ class MetaData(NamedTuple):
     episode_title: Optional[str] = None
     episode_number: Optional[int] = None
     chapters: Optional[List[Chapter]] = None
+
+
+class Listener(ABC):
+    @abstractmethod
+    def encode_started(self):
+        ...
+
+    @abstractmethod
+    def encode_update(self, progress: int):
+        ...
+
+    @abstractmethod
+    def encode_complete(self, result: BytesIO):
+        ...
+
+    @abstractmethod
+    def read_chapters_started(self):
+        ...
+
+    @abstractmethod
+    def read_chapters_complete(self, chapters: List[Chapter]):
+        ...
+
+    @abstractmethod
+    def add_metadata_started(self):
+        ...
+
+    @abstractmethod
+    def add_metadata_complete(self):
+        ...
+
+    @abstractmethod
+    def write_mp3_file_started(self):
+        ...
+
+    @abstractmethod
+    def write_mp3_file_progress(self, progress: int):
+        ...
+
+    @abstractmethod
+    def write_mp3_file_complete(self):
+        ...
 
 
 class ApplicationVersion(NamedTuple):
@@ -261,9 +292,10 @@ class BE_CONFIG(ctypes.Structure):
 
 
 class Lame:
-    def __init__(self):
+    def __init__(self, listener: Listener):
         dll_path = Path(__file__).parent / ".." / "lib" / "lame_enc.dll"
         self.lame_dll = WinDLL(str(dll_path))
+        self.listener = listener
 
     def encode(self, file: Wave_read) -> BytesIO:
         config = self.__config(file)
@@ -291,8 +323,7 @@ class Lame:
             if not wav_data:
                 deinit_error = self.lame_dll.beDeinitStream(stream, byref(mp3_buffer), byref(mp3_bytes))
                 if not deinit_error and mp3_bytes != 0:
-                    mp3_data.write(mp3_buffer.raw[0:mp3_bytes.value])  # TODO typing
-                    print("Done!")
+                    mp3_data.write(mp3_buffer.raw[0:mp3_bytes.value])
 
                 break
 
@@ -311,6 +342,7 @@ class Lame:
                 break
 
             mp3_data.write(mp3_buffer.raw[0:mp3_bytes.value])
+            self.listener.encode_update(int(file.tell() * 100 / file.getnframes()))
 
         self.lame_dll.beCloseStream(stream)
 
