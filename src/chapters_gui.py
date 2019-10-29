@@ -25,8 +25,7 @@ from PySide2.QtGui import QKeySequence
 from PySide2.QtWidgets import QMainWindow, QLineEdit, QSpinBox, QTableView, QWidget, QLabel, QVBoxLayout, \
     QFileDialog, QDialog, QApplication, QFormLayout
 
-from libchapters import Chapter, MetaData, LibChapters
-from utils import ApplicationVersion
+from libchapters import Chapter, MetaData, LibChapters, ApplicationVersion
 
 APPLICATION_NAME = "Chapters"
 APPLICATION_VERSION = ApplicationVersion(1, 0)
