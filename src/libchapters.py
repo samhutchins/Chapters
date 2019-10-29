@@ -21,11 +21,12 @@ import struct
 import wave
 from io import BytesIO
 from subprocess import Popen, PIPE
-from threading import Thread
 from typing import List, Dict, IO, NamedTuple, Optional
 from wave import Wave_read
 
 from mutagen import id3
+
+from lame_enc import Lame
 
 
 class Chapter(NamedTuple):
@@ -129,36 +130,40 @@ class LibChapters:
 
     @staticmethod
     def __encode(wav_file: Wave_read) -> BytesIO:
-        num_cpu = os.cpu_count() if not None else 4
-        bit_depth = wav_file.getsampwidth() * 8
-        sample_rate = wav_file.getframerate()
-        num_samples = wav_file.getnframes()
-        samples_per_chunk = int(LibChapters.__round_up(num_samples, num_cpu) / num_cpu)
-        output_chunks: List[BytesIO] = list()
-        threads: List[Thread] = list()
+        lame = Lame()
+        return lame.encode(wav_file)
 
-        for i in range(num_cpu):
-            wav_file.setpos(samples_per_chunk * i)
-            chunk = wav_file.readframes(samples_per_chunk)
-            output_chunk = BytesIO()
-            output_chunks.append(output_chunk)
-            threads.append(Thread(
-                target=LibChapters.__encode_chunk,
-                args=(chunk, output_chunk, bit_depth, sample_rate)
-            ))
-
-        for thread in threads:
-            thread.start()
-
-        for thread in threads:
-            thread.join()
-
-        output_bytes = BytesIO()
-        for chunk in output_chunks:
-            output_bytes.write(chunk.getvalue())
-            chunk.close()
-
-        return output_bytes
+        # TODO threading
+        # num_cpu = os.cpu_count() if not None else 4
+        # bit_depth = wav_file.getsampwidth() * 8
+        # sample_rate = wav_file.getframerate()
+        # num_samples = wav_file.getnframes()
+        # samples_per_chunk = int(LibChapters.__round_up(num_samples, num_cpu) / num_cpu)
+        # output_chunks: List[BytesIO] = list()
+        # threads: List[Thread] = list()
+        #
+        # for i in range(num_cpu):
+        #     wav_file.setpos(samples_per_chunk * i)
+        #     chunk = wav_file.readframes(samples_per_chunk)
+        #     output_chunk = BytesIO()
+        #     output_chunks.append(output_chunk)
+        #     threads.append(Thread(
+        #         target=self.__encode_chunk,
+        #         args=(chunk, output_chunk, bit_depth, sample_rate)
+        #     ))
+        #
+        # for thread in threads:
+        #     thread.start()
+        #
+        # for thread in threads:
+        #     thread.join()
+        #
+        # output_bytes = BytesIO()
+        # for chunk in output_chunks:
+        #     output_bytes.write(chunk.getvalue())
+        #     chunk.close()
+        #
+        # return output_bytes
 
     @staticmethod
     def __encode_chunk(chunk: bytes, output: BytesIO, bit_depth: int, sample_rate: int) -> None:

@@ -8,3 +8,7 @@
 !src/
 src/*
 !src/*.py
+
+!lib/
+lib/*
+!lib/lame_enc.dll
