@@ -17,15 +17,14 @@
 from __future__ import annotations
 
 import collections
-import ctypes
 import os
 import re
 import struct
 import wave
 from abc import ABC, abstractmethod
-from ctypes import c_ulong, c_byte, c_ushort, c_long, WinDLL, c_void_p, byref
 from io import BytesIO
 from pathlib import Path
+from subprocess import Popen, PIPE
 from threading import Thread
 from typing import List, Dict, IO, NamedTuple, Optional, BinaryIO
 from wave import Wave_read
@@ -272,92 +271,42 @@ class ApplicationVersion(NamedTuple):
 ################
 
 
-BE_CONFIG_MP3 = 0
-BE_MP3_MODE_MONO = 3
-
-
-class BE_CONFIG(ctypes.Structure):
-    _fields_ = [
-        ("dwConfig", c_ulong),
-        ("dwSampleRate", c_ulong),
-        ("byMode", c_byte),
-        ("wBitrate", c_ushort),
-        ("bPrivate", c_long),
-        ("bCRC", c_long),
-        ("bCopyright", c_long),
-        ("bOriginal", c_long)
-    ]
-
-    _packed_ = 1
-
-
 class Lame:
     def __init__(self, listener: Listener):
-        dll_path = Path(__file__).parent / ".." / "lib" / "lame_enc.dll"
-        self.lame_dll = WinDLL(str(dll_path))
         self.listener = listener
+        path_to_lame = Path(__file__).parent / ".." / "lib" / "lame.exe"
+
+        self.command = [str(path_to_lame),
+                        "-r",
+                        "-m", "m",  # mono
+                        "--bitwidth", "24",  # bit depth
+                        "-s", "44100",  # sample rate
+                        "-b", "64",  # bitrate
+                        "-"]
 
     def encode(self, file: Wave_read) -> BytesIO:
-        config = self.__config(file)
-        samples_per_chunk = c_ulong()
-        mp3_buf_size = c_ulong()
-        stream = c_void_p()
-        init_error = self.lame_dll.beInitStream(
-            byref(config),
-            byref(samples_per_chunk),
-            byref(mp3_buf_size),
-            byref(stream))
+        process = Popen(self.command, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        mp3_output = BytesIO()
 
-        if init_error:
-            # TODO Handle failure properly
-            print(f"Error during init: {init_error}")
+        read_data_thread = Thread(target=lambda: mp3_output.write(process.stdout.read()))
+        read_data_thread.daemon = True
+        read_data_thread.start()
 
-        mp3_bytes = c_ulong()
-        mp3_buffer = ctypes.create_string_buffer(mp3_buf_size.value)
-        # 24 bit depth input, so 3 bytes per sample
-        bytes_per_sample = 3
+        total_samples = file.getnframes()
+        chunk = file.readframes(65536)
+        last_progress = 0
+        while chunk:
+            progress = int(file.tell() * 100 / total_samples)
+            if progress != last_progress:
+                self.listener.encode_update(progress)
+                last_progress = progress
 
-        mp3_data = BytesIO()
-        while True:
-            wav_data: bytes = file.readframes(samples_per_chunk.value)
-            if not wav_data:
-                deinit_error = self.lame_dll.beDeinitStream(stream, byref(mp3_buffer), byref(mp3_bytes))
-                if not deinit_error and mp3_bytes != 0:
-                    mp3_data.write(mp3_buffer.raw[0:mp3_bytes.value])
+            process.stdin.write(chunk)
+            chunk = file.readframes(65536)
 
-                break
+        process.stdin.close()
+        read_data_thread.join()
+        process.stdout.close()
+        process.stderr.close()
 
-            # wav_buffer = (c_short * (samples_per_chunk.value * bytes_per_sample))(*wav_data)
-            wav_buffer = ctypes.create_string_buffer(wav_data, samples_per_chunk.value * bytes_per_sample)
-
-            encode_error = self.lame_dll.beEncodeChunk(
-                stream,
-                int(len(wav_data) / bytes_per_sample),
-                byref(wav_buffer),
-                byref(mp3_buffer),
-                byref(mp3_bytes))
-
-            if encode_error:
-                print(f"Encoder error: {encode_error}")
-                break
-
-            mp3_data.write(mp3_buffer.raw[0:mp3_bytes.value])
-            self.listener.encode_update(int(file.tell() * 100 / file.getnframes()))
-
-        self.lame_dll.beCloseStream(stream)
-
-        return mp3_data
-
-    @staticmethod
-    def __config(wav_file: Wave_read) -> BE_CONFIG:
-        config = BE_CONFIG()
-        config.dwConfig = BE_CONFIG_MP3
-        config.dwSampleRate = wav_file.getframerate()
-        config.byMode = BE_MP3_MODE_MONO  # TODO Mono for now
-        config.bitrate = 64
-        config.bPrivate = False
-        config.bCRC = True
-        config.bCopyright = False
-        config.bOriginal = True
-
-        return config
+        return mp3_output

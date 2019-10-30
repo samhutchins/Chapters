@@ -11,4 +11,4 @@ src/*
 
 !lib/
 lib/*
-!lib/lame_enc.dll
+!lib/lame.exe
