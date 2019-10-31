@@ -14,15 +14,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import datetime
 import os
+import re
 import sys
 from typing import Any, List, Callable, NamedTuple, Optional
 
 from PySide2.QtCore import Signal, QCoreApplication, QAbstractTableModel, QModelIndex, Qt, QObject
 from PySide2.QtGui import QKeySequence
 from PySide2.QtWidgets import QMainWindow, QLineEdit, QSpinBox, QTableView, QWidget, QLabel, QVBoxLayout, \
-    QFileDialog, QDialog, QApplication, QFormLayout, QProgressBar
+    QFileDialog, QDialog, QApplication, QFormLayout, QProgressBar, QPushButton, QHBoxLayout
 
 from libchapters import Chapter, MetaData, LibChapters, ApplicationVersion, Listener
 
@@ -37,7 +37,6 @@ class MainWindow(QMainWindow):
         self.current_file: Optional[str] = None
         self.current_file_type: Optional[str] = None
 
-        self.chapters_table_model = ChaptersTableModel()
 
         # UI components
         self.setWindowTitle(APPLICATION_NAME)
@@ -51,8 +50,15 @@ class MainWindow(QMainWindow):
         self.episode_number.setMaximumWidth(55)
 
         self.chapters_table_view = QTableView()
+        self.chapters_table_model = ChaptersTableModel(self.chapters_table_view)
         self.chapters_table_view.setModel(self.chapters_table_model)
         self.chapters_table_view.horizontalHeader().setStretchLastSection(True)
+
+        self.add_chapter_button = QPushButton("Add")
+        self.add_chapter_button.clicked.connect(self.chapters_table_model.add_chapter)
+
+        self.delete_chapter_button = QPushButton("Delete")
+        self.delete_chapter_button.clicked.connect(self.chapters_table_model.remove_selected_chapters)
 
         self.progress_bar = QProgressBar()
 
@@ -73,14 +79,21 @@ class MainWindow(QMainWindow):
         return LibChapters(listener)
 
     def __create_center_widget(self) -> QWidget:
-        episode_info_pane = QFormLayout()
-        episode_info_pane.addRow("Podcast Title:", self.podcast_title)
-        episode_info_pane.addRow("Episode Title:", self.episode_title)
-        episode_info_pane.addRow("Episode Number:", self.episode_number)
+        episode_info_layout = QFormLayout()
+        episode_info_layout.addRow("Podcast Title:", self.podcast_title)
+        episode_info_layout.addRow("Episode Title:", self.episode_title)
+        episode_info_layout.addRow("Episode Number:", self.episode_number)
+
+        add_remove_chapters_layout = QHBoxLayout()
+        add_remove_chapters_layout.addWidget(self.add_chapter_button)
+        add_remove_chapters_layout.addWidget(self.delete_chapter_button)
+        add_remove_chapters_layout.setAlignment(Qt.AlignLeft)
 
         center_widget_layout = QVBoxLayout()
-        center_widget_layout.addLayout(episode_info_pane)
+        center_widget_layout.addLayout(episode_info_layout)
         center_widget_layout.addWidget(self.chapters_table_view)
+        center_widget_layout.addLayout(add_remove_chapters_layout)
+
         center_widget = QWidget()
         center_widget.setLayout(center_widget_layout)
 
@@ -229,13 +242,14 @@ class MainWindow(QMainWindow):
 
 
 class ChaptersTableModel(QAbstractTableModel):
-    def __init__(self):
+    def __init__(self, table_view: QTableView):
         QAbstractTableModel.__init__(self)
+        self.table_view = table_view
         self.__chapters: List[Chapter] = list()
         self.__columns: List[TableColumn] = [
-            TableColumn("Start Time", lambda chapter: str(datetime.timedelta(seconds=int(chapter.start / 1000)))),
-            TableColumn("End Time", lambda chapter: str(datetime.timedelta(seconds=int(chapter.end / 1000)))),
-            TableColumn("Name", lambda chapter: chapter.name)
+            TableColumn("Start Time", self.__get_start(False), self.__get_start(True), self.__set_start),
+            TableColumn("End Time", self.__get_end(False), self.__get_end(True), self.__set_end),
+            TableColumn("Name", self.__get_name, self.__get_name, self.__set_name)
         ]
 
     def set_chapters(self, chapters: List[Chapter]):
@@ -243,6 +257,21 @@ class ChaptersTableModel(QAbstractTableModel):
         self.beginInsertRows(QModelIndex(), 0, len(chapters) - 1)
         self.__chapters = list(chapters)
         self.endInsertRows()
+
+    def add_chapter(self):
+        self.beginInsertRows(QModelIndex(), len(self.__chapters) - 1, len(self.__chapters) - 1)
+        self.__chapters.append(Chapter())
+        self.endInsertRows()
+
+    def remove_selected_chapters(self):
+        selected_indexes: List[QModelIndex] = self.table_view.selectedIndexes()
+        rows: List[int] = [index.row() for index in selected_indexes]
+        rows.sort(reverse=True)
+        for row in rows:
+            if row < len(self.__chapters):
+                self.beginRemoveRows(QModelIndex(), row, row)
+                del self.__chapters[row]
+                self.endRemoveRows()
 
     def clear_chapters(self):
         self.beginRemoveRows(QModelIndex(), 0, len(self.__chapters) - 1)
@@ -261,25 +290,96 @@ class ChaptersTableModel(QAbstractTableModel):
         return len(self.__columns)
 
     # override
-    def data(self, index: QModelIndex, role: int = ...) -> Any:
-        column = self.__columns[index.column()]
-        if role == Qt.DisplayRole:
-            return column.get_data(self.__chapters[index.row()])
-        elif role == Qt.TextAlignmentRole:
-            return column.alignment
-        else:
-            return None
-
-    # override
     def headerData(self, section: int, orientation: Qt.Orientation, role: int = ...) -> Any:
         if role == Qt.DisplayRole:
             if orientation == Qt.Orientation.Horizontal:
                 column = self.__columns[section]
                 return column.title
             else:
-                return section
+                return section + 1
         elif role == Qt.TextAlignmentRole:
             return Qt.AlignCenter
+        else:
+            return None
+
+    # override
+    def flags(self, index: QModelIndex) -> Qt.ItemFlags:
+        return Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsEditable
+
+    # override
+    def data(self, index: QModelIndex, role: int = ...) -> Any:
+        column = self.__columns[index.column()]
+        if role == Qt.DisplayRole:
+            return column.get_data(self.__chapters[index.row()])
+        elif role == Qt.EditRole:
+            return column.get_edit_data(self.__chapters[index.row()])
+        elif role == Qt.TextAlignmentRole:
+            return Qt.AlignVCenter
+        else:
+            return None
+
+    def setData(self, index: QModelIndex, value: str, role: int = ...) -> bool:
+        if role == Qt.EditRole:
+            chapter = self.__chapters[index.row()]
+            self.__columns[index.column()].set_data(chapter, value)
+            self.dataChanged.emit(index.row(), index.column())
+            return True
+        else:
+            return False
+
+    def __get_start(self, for_edit: bool) -> Callable[[Chapter], str]:
+        return lambda chapter: self.__format_timestamp(chapter.start, for_edit)
+
+    def __set_start(self, chapter: Chapter, new_start: str):
+        parsed = self.__parse_timestamp(new_start)
+        if parsed:
+            chapter.start = parsed
+
+    def __get_end(self, for_edit: bool) -> Callable[[Chapter], str]:
+        return lambda chapter: self.__format_timestamp(chapter.end, for_edit)
+
+    def __set_end(self, chapter: Chapter, new_end: str):
+        parsed = self.__parse_timestamp(new_end)
+        if parsed:
+            chapter.end = parsed
+
+    @staticmethod
+    def __get_name(chapter: Chapter) -> str:
+        return chapter.name
+
+    @staticmethod
+    def __set_name(chapter: Chapter, new_name: str):
+        chapter.name = new_name
+
+    milliseconds_in_hour = 3600000
+    milliseconds_in_minute = 60000
+    milliseconds_in_second = 1000
+
+    def __format_timestamp(self, timestamp_millis: int, include_millis: bool) -> str:
+        hours, remainder = divmod(timestamp_millis, self.milliseconds_in_hour)
+        minutes, remainder = divmod(remainder, self.milliseconds_in_minute)
+        seconds, milliseconds = divmod(remainder, self.milliseconds_in_second)
+
+        if include_millis:
+            return "{:02}:{:02}:{:02}.{:03}".format(hours, minutes, seconds, milliseconds)
+        else:
+            return "{:02}:{:02}:{:02}".format(hours, minutes, seconds)
+
+    def __parse_timestamp(self, timestamp: str) -> Optional[int]:
+        match_info = re.search("([0-9]{1,2}):([0-5]?[0-9]):([0-5]?[0-9])(\\.[0-9]{1,3})?", timestamp)
+        if match_info:
+            hours = int(match_info.group(1))
+            minutes = int(match_info.group(2))
+            seconds = int(match_info.group(3))
+            millis_str = match_info.group(4)
+            if millis_str:
+                milliseconds = int(millis_str[1:])
+            else:
+                milliseconds = 0
+
+            return (hours * self.milliseconds_in_hour) + \
+                   (minutes * self.milliseconds_in_minute) + \
+                   (seconds * self.milliseconds_in_second) + milliseconds
         else:
             return None
 
@@ -306,7 +406,8 @@ class AboutDialog(QDialog):
 class TableColumn(NamedTuple):
     title: str
     get_data: Callable[[Chapter], str]
-    alignment: int = Qt.AlignVCenter
+    get_edit_data: Callable[[Chapter], str]
+    set_data: Callable[[Chapter, str], None]
 
 
 class EncoderListenerSignals(QObject):

@@ -294,10 +294,11 @@ class LibChapters:
         return fsize
 
 
-class Chapter(NamedTuple):
-    start: int
-    end: int
-    name: str
+class Chapter:
+    def __init__(self, start: int = 0, end: int = 0, name: str = ""):
+        self.start: int = start
+        self.end: int = end
+        self.name: str = name
 
 
 class MetaData(NamedTuple):
