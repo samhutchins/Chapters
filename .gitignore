@@ -4,6 +4,7 @@
 !README.md
 !COPYING
 !LICENSE
+!requirements.txt
 
 !src/
 src/*
