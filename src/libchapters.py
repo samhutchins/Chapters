@@ -367,7 +367,7 @@ class ApplicationVersion(NamedTuple):
 class Lame:
     def __init__(self, listener: Listener):
         self.listener = listener
-        path_to_lame = Path(__file__).parent / ".." / "lib" / "lame.exe"
+        path_to_lame = Path(__file__).parent / "lib" / "lame.exe"
 
         self.command = [str(path_to_lame),
                         "-r",

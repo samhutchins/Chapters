@@ -10,6 +10,6 @@
 src/*
 !src/*.py
 
-!lib/
-lib/*
-!lib/lame.exe
+!src/lib
+src/lib/*
+!src/lib/lame.exe
