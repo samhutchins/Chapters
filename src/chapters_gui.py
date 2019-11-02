@@ -21,8 +21,8 @@ from typing import Any, List, Callable, NamedTuple, Optional
 
 from PySide2.QtCore import Signal, QCoreApplication, QAbstractTableModel, QModelIndex, Qt, QObject
 from PySide2.QtGui import QKeySequence
-from PySide2.QtWidgets import QMainWindow, QLineEdit, QSpinBox, QTableView, QWidget, QLabel, QVBoxLayout, \
-    QFileDialog, QDialog, QApplication, QFormLayout, QProgressBar, QPushButton, QHBoxLayout
+from PySide2.QtWidgets import QMainWindow, QLineEdit, QSpinBox, QTableView, QWidget, QVBoxLayout, \
+    QFileDialog, QDialog, QApplication, QFormLayout, QProgressBar, QPushButton, QHBoxLayout, QTextBrowser
 
 from libchapters import Chapter, MetaData, LibChapters, ApplicationVersion, Listener
 
@@ -129,7 +129,6 @@ class MainWindow(QMainWindow):
 
         help_menu = menu_bar.addMenu("Help")
         help_action = help_menu.addAction("About")
-        help_action.setShortcut(QKeySequence("F1"))
         help_action.triggered.connect(self.__show_about_dialog)
 
     def __create_status_bar(self):
@@ -390,10 +389,24 @@ class AboutDialog(QDialog):
         self.setWindowTitle("About")
         self.resize(400, 200)
 
+        text_browser = QTextBrowser()
+        text_browser.setHtml(f"""<h1>{APPLICATION_NAME}</h1>
+            <p>
+            <a href="https://www.samhutchins.co.uk/software/chapters/">{APPLICATION_NAME}</a> version {APPLICATION_VERSION}, released under GPLv3. Source code can be found on <a href="https://github.com/samhutchins/Chapters">GitHub</a>.
+            </p>
+            <p>
+            Found a bug? <a href="https://twitter.com/_samhutchins">Tweet at me</a>!
+            </p>""")
+
+        ok_button = QPushButton("OK")
+        ok_button.clicked.connect(self.close)
+        button_layout = QHBoxLayout()
+        button_layout.setAlignment(Qt.AlignRight)
+        button_layout.addWidget(ok_button)
+
         layout = QVBoxLayout()
-        layout.addWidget(QLabel(f"{APPLICATION_NAME} version {APPLICATION_VERSION}"))
-        layout.addWidget(QLabel("Licenced GPLv3"))
-        layout.addStretch()
+        layout.addWidget(text_browser)
+        layout.addLayout(button_layout)
         self.setLayout(layout)
 
     # override
