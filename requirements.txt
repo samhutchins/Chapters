@@ -1,2 +1,2 @@
-PySide2==5.13.1
+PySide2==5.13.2
 Mutagen==1.42.0
