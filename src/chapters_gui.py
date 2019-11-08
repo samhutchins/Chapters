@@ -398,6 +398,8 @@ class AboutDialog(QDialog):
             Found a bug? <a href="https://twitter.com/_samhutchins">Tweet at me</a>!
             </p>""")
 
+        text_browser.setOpenExternalLinks(True)
+
         ok_button = QPushButton("OK")
         ok_button.clicked.connect(self.close)
         button_layout = QHBoxLayout()
