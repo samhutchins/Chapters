@@ -37,7 +37,6 @@ class MainWindow(QMainWindow):
         self.current_file: Optional[str] = None
         self.current_file_type: Optional[str] = None
 
-
         # UI components
         self.setWindowTitle(APPLICATION_NAME)
         self.setMinimumSize(480, 320)
