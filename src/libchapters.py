@@ -27,15 +27,16 @@ from pathlib import Path
 from subprocess import Popen, PIPE
 from threading import Thread
 from typing import List, Dict, IO, NamedTuple, Optional, Callable, Tuple, Union
+from urllib.error import HTTPError
+from urllib.request import urlopen
 from wave import Wave_read
 
 from mutagen import id3
 
-__all__ = ["ApplicationVersion",
-           "Chapter",
-           "MetaData",
-           "LibChapters",
-           "Listener"]
+__all__ = ["APPLICATION_NAME", "APPLICATION_VERSION", "HOMEPAGE", "GITHUB", "ISSUES",
+           "Chapter", "MetaData",
+           "LibChapters", "Listener",
+           "UpdateChecker", "AbstractUpdateCheckerListener"]
 
 
 class LibChapters:
@@ -44,22 +45,22 @@ class LibChapters:
         self.mp3_data: Optional[BytesIO] = None
 
     def encode_wav_file(self, path_to_wav_file: str):
-        self.__run_async(lambda: self.__encode_file(path_to_wav_file))
+        run_async(lambda: self.__encode_file(path_to_wav_file))
 
     def read_metadata_from_wav_file(self, path_to_wav_file: str):
-        self.__run_async(lambda: self.__read_metadata_from_wav_file(path_to_wav_file))
+        run_async(lambda: self.__read_metadata_from_wav_file(path_to_wav_file))
 
     def read_metadata_from_mp3_file(self, path_to_mp3_file: str):
-        self.__run_async(lambda: self.__read_metadata_from_mp3_file(path_to_mp3_file))
+        run_async(lambda: self.__read_metadata_from_mp3_file(path_to_mp3_file))
 
     def write_metadata_to_file(self, meta_data: MetaData, path_to_mp3_file: str,):
-        self.__run_async(lambda: self.__write_metadata_to_file(meta_data, path_to_mp3_file))
+        run_async(lambda: self.__write_metadata_to_file(meta_data, path_to_mp3_file))
 
     def write_mp3_data_with_metadata(self, metadata: MetaData, path_to_output: str):
-        self.__run_async(lambda: self.__write_mp3_data_with_metadata(metadata, path_to_output))
+        run_async(lambda: self.__write_mp3_data_with_metadata(metadata, path_to_output))
 
     def copy_mp3_with_metadata(self, path_to_input_mp3: str, path_to_output_mp3: str, metadata: MetaData):
-        self.__run_async(lambda: self.__copy_mp3_with_metadata(path_to_input_mp3, path_to_output_mp3, metadata))
+        run_async(lambda: self.__copy_mp3_with_metadata(path_to_input_mp3, path_to_output_mp3, metadata))
 
     def __encode_file(self, path_to_wav_file: str):
         self.listener.encode_started()
@@ -262,12 +263,6 @@ class LibChapters:
             return None, None  # empty tuple
 
     @staticmethod
-    def __run_async(fn: Callable):
-        thread = Thread(target=fn)
-        thread.daemon = True
-        thread.start()
-
-    @staticmethod
     def __samples_to_millis(wav_file: Wave_read, samples: int) -> int:
         return int((samples / wav_file.getframerate()) * 1000)
 
@@ -342,22 +337,75 @@ class Listener(ABC):
         ...
 
 
-class ApplicationVersion(NamedTuple):
-    major: int
-    minor: int
+class ApplicationVersion():
+    def __init__(self, year: int, update: int):
+        self.year = year
+        self.update = update
 
     def is_older_than(self, other: ApplicationVersion) -> bool:
-        if self.major < other.major:
+        if self.year < other.year:
             return True
-        elif self.major == other.major and self.minor < other.minor:
+        elif self.year == other.year and self.update < other.update:
             return True
         else:
             return False
 
+    @staticmethod
+    def parse(version: str) -> ApplicationVersion:
+        year, update = version.split(".")
+        return ApplicationVersion(int(year), int(update))
+
     # override
     def __str__(self):
-        return f"{self.major}.{self.minor}"
+        return f"{self.year}.{self.update}"
 
+
+class UpdateChecker:
+    def __init__(self, listener: AbstractUpdateCheckerListener):
+        self.listener = listener
+
+    def check_for_updates(self, current_version: ApplicationVersion) -> None:
+        run_async(lambda: self.__check_for_updates(current_version))
+
+    def __check_for_updates(self, current_version: ApplicationVersion) -> None:
+        try:
+            with urlopen("https://www.samhutchins.co.uk/software/chapters/latest") as update_file:
+                latest_version = ApplicationVersion.parse(update_file.read())
+        except HTTPError:
+            latest_version = APPLICATION_VERSION
+
+        if current_version.is_older_than(latest_version):
+            self.listener.update_available()
+        else:
+            self.listener.no_update_available()
+
+
+class AbstractUpdateCheckerListener(ABC):
+    @abstractmethod
+    def update_available(self):
+        ...
+
+    @abstractmethod
+    def no_update_available(self):
+        ...
+
+
+def run_async(fn: Callable):
+    thread = Thread(target=fn)
+    thread.daemon = True
+    thread.start()
+
+
+#############
+# Constants #
+#############
+
+APPLICATION_NAME = "Chapters"
+APPLICATION_VERSION = ApplicationVersion(2019, 1)
+
+HOMEPAGE = "https://www.samhutchins.co.uk/software/chapters/"
+GITHUB = "https://github.com/samhutchins/Chapters/"
+ISSUES = "https://github.com/samhutchins/Chapters/issues"
 
 ################
 # LAME wrapper #

@@ -20,14 +20,13 @@ import sys
 from typing import Any, List, Callable, NamedTuple, Optional
 
 from PySide2.QtCore import Signal, QCoreApplication, QAbstractTableModel, QModelIndex, Qt, QObject
-from PySide2.QtGui import QKeySequence
+from PySide2.QtGui import QKeySequence, QDesktopServices
 from PySide2.QtWidgets import QMainWindow, QLineEdit, QSpinBox, QTableView, QWidget, QVBoxLayout, \
     QFileDialog, QDialog, QApplication, QFormLayout, QProgressBar, QPushButton, QHBoxLayout, QTextBrowser
 
-from libchapters import Chapter, MetaData, LibChapters, ApplicationVersion, Listener
-
-APPLICATION_NAME = "Chapters"
-APPLICATION_VERSION = ApplicationVersion(1, 0)
+import libchapters
+from libchapters import Chapter, MetaData, LibChapters, Listener, UpdateChecker, \
+    AbstractUpdateCheckerListener
 
 
 class MainWindow(QMainWindow):
@@ -38,7 +37,7 @@ class MainWindow(QMainWindow):
         self.current_file_type: Optional[str] = None
 
         # UI components
-        self.setWindowTitle(APPLICATION_NAME)
+        self.setWindowTitle(libchapters.APPLICATION_NAME)
         self.setMinimumSize(480, 320)
         self.resize(900, 500)
         self.__create_menu()
@@ -236,7 +235,7 @@ class MainWindow(QMainWindow):
     def __set_current_file(self, current_file: str, current_file_type: str):
         self.current_file = current_file
         self.current_file_type = current_file_type
-        self.setWindowTitle(f"{APPLICATION_NAME} - {os.path.basename(current_file)}")
+        self.setWindowTitle(f"{libchapters.APPLICATION_NAME} - {os.path.basename(current_file)}")
 
 
 class ChaptersTableModel(QAbstractTableModel):
@@ -385,24 +384,36 @@ class ChaptersTableModel(QAbstractTableModel):
 class AboutDialog(QDialog):
     def __init__(self, parent: MainWindow):
         QDialog.__init__(self, parent, Qt.WindowCloseButtonHint)
+        update_checker_listener = UpdateCheckerListener()
+        update_checker_listener.signals.update_available.connect(self.update_available)
+        update_checker_listener.signals.no_update_available.connect(self.no_update_available)
+        self.update_checker = UpdateChecker(update_checker_listener)
         self.setWindowTitle("About")
         self.resize(400, 200)
 
         text_browser = QTextBrowser()
-        text_browser.setHtml(f"""<h1>{APPLICATION_NAME}</h1>
+        text_browser.setHtml(f"""<h1>{libchapters.APPLICATION_NAME}</h1>
             <p>
-            <a href="https://www.samhutchins.co.uk/software/chapters/">{APPLICATION_NAME}</a> version {APPLICATION_VERSION}, released under GPLv3. Source code can be found on <a href="https://github.com/samhutchins/Chapters">GitHub</a>.
+            <a href="{libchapters.HOMEPAGE}">{libchapters.APPLICATION_NAME}</a> version 
+            {libchapters.APPLICATION_VERSION}, released under GPLv3. Source code can be found on 
+            <a href="{libchapters.GITHUB}">GitHub</a>.
             </p>
             <p>
-            Found a bug? <a href="https://twitter.com/_samhutchins">Tweet at me</a>!
+            Found a bug? <a href="{libchapters.ISSUES}">Report it here</a>!
             </p>""")
 
         text_browser.setOpenExternalLinks(True)
 
         ok_button = QPushButton("OK")
         ok_button.clicked.connect(self.close)
+        ok_button.setDefault(True)
+
+        self.check_for_updates_button = QPushButton("Check for updates")
+        self.check_for_updates_button.clicked.connect(self.check_for_updates)
+
         button_layout = QHBoxLayout()
         button_layout.setAlignment(Qt.AlignRight)
+        button_layout.addWidget(self.check_for_updates_button)
         button_layout.addWidget(ok_button)
 
         layout = QVBoxLayout()
@@ -415,6 +426,16 @@ class AboutDialog(QDialog):
         super().show()
         self.raise_()
         self.activateWindow()
+
+    def check_for_updates(self):
+        self.update_checker.check_for_updates(libchapters.APPLICATION_VERSION)
+
+    def update_available(self):
+        self.check_for_updates_button.setText("Update available!")
+        QDesktopServices.openUrl(libchapters.HOMEPAGE)
+
+    def no_update_available(self):
+        self.check_for_updates_button.setText("Up to date")
 
 
 class TableColumn(NamedTuple):
@@ -461,6 +482,21 @@ class LibChaptersListener(Listener):
 
     def write_mp3_file_complete(self, path_to_mp3: str):
         self.signals.write_mp3_file_complete.emit(path_to_mp3)
+
+
+class UpdateCheckerSignals(QObject):
+    update_available = Signal()
+    no_update_available = Signal()
+
+
+class UpdateCheckerListener(AbstractUpdateCheckerListener):
+    signals = UpdateCheckerSignals()
+
+    def update_available(self):
+        self.signals.update_available.emit()
+
+    def no_update_available(self):
+        self.signals.no_update_available.emit()
 
 
 if __name__ == "__main__":
