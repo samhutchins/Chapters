@@ -126,8 +126,11 @@ class MainWindow(QMainWindow):
         exit_action.triggered.connect(QCoreApplication.quit)
 
         help_menu = menu_bar.addMenu("Help")
-        help_action = help_menu.addAction("About")
-        help_action.triggered.connect(self.__show_about_dialog)
+        documentation_action = help_menu.addAction("Open Documentation...")
+        documentation_action.triggered.connect(lambda: QDesktopServices.openUrl(libchapters.DOCUMENTATION))
+        help_menu.addSeparator()
+        about_action = help_menu.addAction("About...")
+        about_action.triggered.connect(self.__show_about_dialog)
 
     def __create_status_bar(self):
         status_bar = self.statusBar()

@@ -33,7 +33,7 @@ from wave import Wave_read
 
 from mutagen import id3
 
-__all__ = ["APPLICATION_NAME", "APPLICATION_VERSION", "HOMEPAGE", "GITHUB", "ISSUES",
+__all__ = ["APPLICATION_NAME", "APPLICATION_VERSION", "HOMEPAGE", "DOCUMENTATION", "GITHUB", "ISSUES",
            "Chapter", "MetaData",
            "LibChapters", "AbstractLibChaptersListener",
            "UpdateChecker", "AbstractUpdateCheckerListener"]
@@ -404,8 +404,9 @@ APPLICATION_NAME = "Chapters"
 APPLICATION_VERSION = ApplicationVersion(2019, 1)
 
 HOMEPAGE = "https://www.samhutchins.co.uk/software/chapters/"
+DOCUMENTATION = HOMEPAGE + "documentation/"
 GITHUB = "https://github.com/samhutchins/Chapters/"
-ISSUES = "https://github.com/samhutchins/Chapters/issues"
+ISSUES = GITHUB + "issues"
 
 ################
 # LAME wrapper #
