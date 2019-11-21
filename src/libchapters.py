@@ -35,12 +35,12 @@ from mutagen import id3
 
 __all__ = ["APPLICATION_NAME", "APPLICATION_VERSION", "HOMEPAGE", "GITHUB", "ISSUES",
            "Chapter", "MetaData",
-           "LibChapters", "Listener",
+           "LibChapters", "AbstractLibChaptersListener",
            "UpdateChecker", "AbstractUpdateCheckerListener"]
 
 
 class LibChapters:
-    def __init__(self, listener: Listener):
+    def __init__(self, listener: AbstractLibChaptersListener):
         self.listener = listener
         self.mp3_data: Optional[BytesIO] = None
 
@@ -303,7 +303,7 @@ class MetaData(NamedTuple):
     chapters: Optional[List[Chapter]] = None
 
 
-class Listener(ABC):
+class AbstractLibChaptersListener(ABC):
     @abstractmethod
     def encode_started(self):
         ...
@@ -413,7 +413,7 @@ ISSUES = "https://github.com/samhutchins/Chapters/issues"
 
 
 class Lame:
-    def __init__(self, listener: Listener):
+    def __init__(self, listener: AbstractLibChaptersListener):
         self.listener = listener
         path_to_lame = Path(__file__).parent / "lib" / "lame.exe"
 

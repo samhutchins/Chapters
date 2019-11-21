@@ -25,7 +25,7 @@ from PySide2.QtWidgets import QMainWindow, QLineEdit, QSpinBox, QTableView, QWid
     QFileDialog, QDialog, QApplication, QFormLayout, QProgressBar, QPushButton, QHBoxLayout, QTextBrowser
 
 import libchapters
-from libchapters import Chapter, MetaData, LibChapters, Listener, UpdateChecker, \
+from libchapters import Chapter, MetaData, LibChapters, AbstractLibChaptersListener, UpdateChecker, \
     AbstractUpdateCheckerListener
 
 
@@ -456,7 +456,7 @@ class EncoderListenerSignals(QObject):
     write_mp3_file_complete = Signal(str)
 
 
-class LibChaptersListener(Listener):
+class LibChaptersListener(AbstractLibChaptersListener):
     signals = EncoderListenerSignals()
 
     def encode_started(self):
