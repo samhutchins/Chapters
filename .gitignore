@@ -2,7 +2,6 @@
 
 !.gitignore
 !README.md
-!COPYING
 !LICENSE
 !requirements.txt
 !build-app.ps1
