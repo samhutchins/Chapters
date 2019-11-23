@@ -66,8 +66,7 @@ class LibChapters:
     def __encode_file(self, path_to_wav_file: str):
         self.listener.encode_started()
         lame = Lame(self.listener)
-        with wave.open(path_to_wav_file) as wav_file:
-            self.mp3_data = lame.encode(wav_file)
+        self.mp3_data = lame.encode(path_to_wav_file)
         self.listener.encode_complete()
 
     def __read_metadata_from_wav_file(self, path_to_wav_file):
@@ -416,7 +415,7 @@ ISSUES = GITHUB + "issues"
 
 class Lame:
     def __init__(self, listener: AbstractLibChaptersListener):
-        self.listener = listener
+        self.listener = AggregateListener(listener)
         path_to_lame = Path(__file__).parent / "lib" / "lame.exe"
 
         self.command = [str(path_to_lame),
@@ -427,32 +426,102 @@ class Lame:
                         "-b", "64",  # bitrate
                         "-"]
 
-    def encode(self, file: Wave_read) -> BytesIO:
+    def encode(self, path_to_wav: str) -> BytesIO:
+        num_cpu = os.cpu_count()
+        with wave.open(path_to_wav, "rb") as wav_file:
+            num_samples = self.make_multiple(wav_file.getnframes(), num_cpu)
+
+        samples_per_thread = int(num_samples / num_cpu)
+        output_chunks: List[BytesIO] = list()
+        threads: List[Thread] = list()
+
+        for i in range(num_cpu):
+            wav_file = wave.open(path_to_wav, "rb")
+            wav_file.setpos(samples_per_thread * i)
+            output = BytesIO()
+            output_chunks.append(output)
+            thread_id = f"encoder-{i+1}"
+            self.listener.add_id(thread_id)
+            threads.append(Thread(target=self.encode_chunk,
+                                  args=[thread_id, wav_file, samples_per_thread, output]))
+
+        for thread in threads:
+            thread.start()
+
+        for thread in threads:
+            thread.join()
+
+        mp3_output = BytesIO()
+        for chunk in output_chunks:
+            mp3_output.write(chunk.getvalue())
+
+        return mp3_output
+
+    def encode_chunk(self, thread_id: str, file: Wave_read, total_samples_to_read: int, output: BytesIO) -> None:
         options = STARTUPINFO()
         options.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         options.wShowWindow = subprocess.SW_HIDE
         process = Popen(self.command, stdin=PIPE, stdout=PIPE, stderr=PIPE, startupinfo=options)
-        mp3_output = BytesIO()
 
-        read_data_thread = Thread(target=lambda: mp3_output.write(process.stdout.read()))
+        read_data_thread = Thread(target=lambda: output.write(process.stdout.read()))
         read_data_thread.daemon = True
         read_data_thread.start()
 
-        total_samples = file.getnframes()
-        chunk = file.readframes(65536)
+        samples_to_read, samples_left = self.update_samples_to_read(total_samples_to_read, 1024)
         last_progress = 0
-        while chunk:
-            progress = int(file.tell() * 100 / total_samples)
+        while samples_left > 0:
+            process.stdin.write(file.readframes(samples_to_read))
+
+            progress = int((total_samples_to_read - samples_left) * 100 / total_samples_to_read)
             if progress != last_progress:
-                self.listener.encode_update(progress)
+                self.listener.encode_update(thread_id, progress)
                 last_progress = progress
 
-            process.stdin.write(chunk)
-            chunk = file.readframes(65536)
+            samples_to_read, samples_left = self.update_samples_to_read(samples_left, 1024)
 
+        self.listener.encode_update(thread_id, 100)
         process.stdin.close()
         read_data_thread.join()
         process.stdout.close()
         process.stderr.close()
+        file.close()
 
-        return mp3_output
+    @staticmethod
+    def update_samples_to_read(samples_left: int, chunk_size: int) -> Tuple[int, int]:
+        if samples_left > chunk_size:
+            samples_to_read = chunk_size
+            samples_left -= chunk_size
+        else:
+            samples_to_read = samples_left
+            samples_left = 0
+
+        return samples_to_read, samples_left
+
+    @staticmethod
+    def make_multiple(number: int, divisor: int) -> int:
+        """
+        Takes a number, and keeps adding 1 until it evenly divides into the divisor
+        :param number: The number you want to evenly divide by the divisor
+        :param divisor: The divisor
+        :return: A number that's greater or equal to the input, and will evenly divide into the divisor
+        """
+        while number % divisor != 0:
+            number += 1
+
+        return number
+
+
+class AggregateListener:
+    def __init__(self, wrapped_listener: AbstractLibChaptersListener):
+        self.wrapped_listener = wrapped_listener
+        self.progress_dict: Dict[str, int] = dict()
+
+    def add_id(self, thread_id: str) -> None:
+        self.progress_dict[thread_id] = 0
+
+    def encode_update(self, thread_id: str, progress: int) -> None:
+        # CPython dicts happen to be thread safe for atomic operations
+        self.progress_dict[thread_id] = progress
+        values = self.progress_dict.values()
+        avg_progress = int(sum(values) / len(values))
+        self.wrapped_listener.encode_update(avg_progress)
