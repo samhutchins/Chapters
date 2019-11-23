@@ -20,11 +20,12 @@ import collections
 import os
 import re
 import struct
+import subprocess
 import wave
 from abc import ABC, abstractmethod
 from io import BytesIO
 from pathlib import Path
-from subprocess import Popen, PIPE
+from subprocess import Popen, PIPE, STARTUPINFO
 from threading import Thread
 from typing import List, Dict, IO, NamedTuple, Optional, Callable, Tuple, Union
 from urllib.error import HTTPError
@@ -427,7 +428,10 @@ class Lame:
                         "-"]
 
     def encode(self, file: Wave_read) -> BytesIO:
-        process = Popen(self.command, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        options = STARTUPINFO()
+        options.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        options.wShowWindow = subprocess.SW_HIDE
+        process = Popen(self.command, stdin=PIPE, stdout=PIPE, stderr=PIPE, startupinfo=options)
         mp3_output = BytesIO()
 
         read_data_thread = Thread(target=lambda: mp3_output.write(process.stdout.read()))

@@ -5,6 +5,7 @@
 !COPYING
 !LICENSE
 !requirements.txt
+!build-app.ps1
 
 !src/
 src/*

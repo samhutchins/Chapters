@@ -1,2 +1,3 @@
 PySide2==5.13.2
 Mutagen==1.42.0
+PyInstaller==3.5
