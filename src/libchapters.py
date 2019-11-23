@@ -337,7 +337,7 @@ class AbstractLibChaptersListener(ABC):
         ...
 
 
-class ApplicationVersion():
+class ApplicationVersion:
     def __init__(self, year: int, update: int):
         self.year = year
         self.update = update
