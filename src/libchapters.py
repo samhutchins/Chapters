@@ -82,7 +82,10 @@ class LibChapters:
     def __read_metadata_from_mp3_file(self, path_to_mp3_file: str) -> None:
         self.listener.read_metadata_started()
         with open(path_to_mp3_file, "rb") as mp3_file:
-            tags = id3.ID3(mp3_file)
+            try:
+                tags = id3.ID3(mp3_file)
+            except id3.ID3NoHeaderError:
+                tags = id3.ID3()
 
         podcast_title = self.__get_podcast_name_from_id3_tags(tags)
         episode_title = self.__get_episode_title_from_id3_tags(tags)
