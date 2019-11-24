@@ -26,13 +26,14 @@ from PySide2.QtWidgets import QMainWindow, QLineEdit, QSpinBox, QTableView, QWid
 
 import libchapters
 from libchapters import Chapter, MetaData, LibChapters, AbstractLibChaptersListener, UpdateChecker, \
-    AbstractUpdateCheckerListener
+    AbstractUpdateCheckerListener, Prefs
 
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         QMainWindow.__init__(self)
         self.lib_chapters = self.__create_libchapters()
+        self.prefs = Prefs()
         self.current_file: Optional[str] = None
         self.current_file_type: Optional[str] = None
 
@@ -242,21 +243,21 @@ class MainWindow(QMainWindow):
 
     def __show_open_dialog(self, type_filter: str) -> Optional[str]:
         file, _ = QFileDialog.getOpenFileName(parent=self,
-                                              dir=self.lib_chapters.get_open_save_dir(),
+                                              dir=self.prefs.get_pref_open_dir(),
                                               filter=type_filter)
 
         if file:
-            self.lib_chapters.set_open_save_dir(file)
+            self.prefs.set_pref_open_dir(file)
 
         return file
 
     def __show_save_dialog(self, type_filter: str) -> Optional[str]:
         file, _ = QFileDialog.getSaveFileName(parent=self,
-                                              dir=self.lib_chapters.get_open_save_dir(),
+                                              dir=self.prefs.get_pref_save_dir(),
                                               filter=type_filter)
 
         if file:
-            self.lib_chapters.set_open_save_dir(file)
+            self.prefs.set_pref_save_dir(file)
 
         return file
 

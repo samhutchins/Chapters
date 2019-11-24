@@ -38,7 +38,8 @@ from mutagen import id3
 __all__ = ["APPLICATION_NAME", "APPLICATION_VERSION", "HOMEPAGE", "DOCUMENTATION", "GITHUB", "ISSUES",
            "Chapter", "MetaData",
            "LibChapters", "AbstractLibChaptersListener",
-           "UpdateChecker", "AbstractUpdateCheckerListener"]
+           "UpdateChecker", "AbstractUpdateCheckerListener",
+           "Prefs"]
 
 
 class LibChapters:
@@ -63,18 +64,6 @@ class LibChapters:
 
     def copy_mp3_with_metadata(self, path_to_input_mp3: str, path_to_output_mp3: str, metadata: MetaData) -> None:
         run_async(lambda: self.__copy_mp3_with_metadata(path_to_input_mp3, path_to_output_mp3, metadata))
-
-    def get_open_save_dir(self) -> str:
-        prefs_dict = self.__load_prefs_dict()
-        try:
-            return prefs_dict["open_save_dir"]
-        except KeyError:
-            return str(Path.home())
-
-    def set_open_save_dir(self, location: str) -> None:
-        prefs_dict = self.__load_prefs_dict()
-        prefs_dict["open_save_dir"] = location
-        self.__save_prefs_dict(prefs_dict)
 
     def __encode_file(self, path_to_wav_file: str) -> None:
         self.listener.encode_started()
@@ -191,23 +180,6 @@ class LibChapters:
 
         self.listener.write_mp3_file_complete(path_to_output_mp3)
 
-    def __load_prefs_dict(self) -> Dict[str, str]:
-        prefs_location: Path = self.__get_appdata_location()
-        prefs_pickle = str(prefs_location / "prefs.pickle")
-        if os.path.exists(prefs_pickle):
-            with open(prefs_pickle, "rb") as f:
-                prefs_dict: Dict[str, str] = pickle.load(f)
-        else:
-            prefs_dict: Dict[str, str] = dict()
-
-        return prefs_dict
-
-    def __save_prefs_dict(self, prefs_dict: Dict[str, str]) -> None:
-        prefs_location = self.__get_appdata_location()
-        prefs_pickle = str(prefs_location / "prefs.pickle")
-        with open(prefs_pickle, "wb") as f:
-            pickle.dump(prefs_dict, f)
-
     @staticmethod
     def __get_tags(metadata: MetaData) -> id3.ID3:
         tags = id3.ID3()
@@ -291,14 +263,6 @@ class LibChapters:
             return int(match_info.group(1)), match_info.group(2)
         else:
             return None, None  # empty tuple
-
-    @staticmethod
-    def __get_appdata_location() -> Path:
-        prefs_location = Path(os.getenv("LOCALAPPDATA")) / "Chapters"
-        if not os.path.exists(prefs_location):
-            os.mkdir(prefs_location)
-
-        return prefs_location
 
     @staticmethod
     def __samples_to_millis(wav_file: Wave_read, samples: int) -> int:
@@ -426,6 +390,44 @@ class AbstractUpdateCheckerListener(ABC):
     @abstractmethod
     def no_update_available(self) -> None:
         ...
+
+
+class Prefs:
+    def __init__(self) -> None:
+        prefs_folder = Path(os.getenv("LOCALAPPDATA")) / "Chapters"
+        if not prefs_folder.exists():
+            prefs_folder.mkdir()
+
+        self.prefs_pickle = prefs_folder / "prefs.pickle"
+
+        self.prefs_dict: Dict[str, str] = dict()
+        if self.prefs_pickle.exists():
+            with open(self.prefs_pickle, "rb") as f:
+                self.prefs_dict = pickle.load(f)
+
+    def get_pref_open_dir(self) -> str:
+        try:
+            return self.prefs_dict["open_dir"]
+        except KeyError:
+            return str(Path.home())
+
+    def set_pref_open_dir(self, path: str) -> None:
+        self.prefs_dict["open_dir"] = path
+        self.save_prefs()
+
+    def get_pref_save_dir(self) -> str:
+        try:
+            return self.prefs_dict["save_dir"]
+        except KeyError:
+            return str(Path.home())
+
+    def set_pref_save_dir(self, path: str) -> None:
+        self.prefs_dict["save_dir"] = path
+        self.save_prefs()
+
+    def save_prefs(self):
+        with open(self.prefs_pickle, "wb") as f:
+            pickle.dump(self.prefs_dict, f)
 
 
 def run_async(fn: Callable) -> None:
