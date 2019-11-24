@@ -137,14 +137,14 @@ class MainWindow(QMainWindow):
         status_bar.addPermanentWidget(self.progress_bar)
 
     def __import_audio(self):
-        file, _ = QFileDialog.getOpenFileName(self, filter="*.wav")
+        file = self.__show_open_dialog("*.wav")
         if file:
             self.__set_current_file(file, "wav")
             self.lib_chapters.read_metadata_from_wav_file(file)
             self.lib_chapters.encode_wav_file(file)
 
     def __open_file(self):
-        file, _ = QFileDialog.getOpenFileName(self, filter="*.mp3")
+        file = self.__show_open_dialog("*.mp3")
         if file:
             self.__set_current_file(file, "mp3")
             self.lib_chapters.read_metadata_from_mp3_file(file)
@@ -195,7 +195,7 @@ class MainWindow(QMainWindow):
                 chapters=self.chapters_table_model.get_chapters())
 
             if self.current_file_type == "wav":
-                output_file, _ = QFileDialog.getSaveFileName(self, filter="*.mp3")
+                output_file = self.__show_save_dialog("*.mp3")
                 if output_file:
                     self.lib_chapters.write_mp3_data_with_metadata(meta_data, output_file)
             elif self.current_file_type == "mp3":
@@ -203,7 +203,7 @@ class MainWindow(QMainWindow):
 
     def __save_current_file_as(self):
         if self.current_file:
-            output_file, _ = QFileDialog.getSaveFileName(self, filter="*.mp3")
+            output_file = self.__show_save_dialog("*.mp3")
             if output_file:
                 meta_data = MetaData(
                     podcast_title=self.podcast_title.text(),
@@ -239,6 +239,26 @@ class MainWindow(QMainWindow):
         self.current_file = current_file
         self.current_file_type = current_file_type
         self.setWindowTitle(f"{libchapters.APPLICATION_NAME} - {os.path.basename(current_file)}")
+
+    def __show_open_dialog(self, type_filter: str) -> Optional[str]:
+        file, _ = QFileDialog.getOpenFileName(parent=self,
+                                              dir=self.lib_chapters.get_open_save_dir(),
+                                              filter=type_filter)
+
+        if file:
+            self.lib_chapters.set_open_save_dir(file)
+
+        return file
+
+    def __show_save_dialog(self, type_filter: str) -> Optional[str]:
+        file, _ = QFileDialog.getSaveFileName(parent=self,
+                                              dir=self.lib_chapters.get_open_save_dir(),
+                                              filter=type_filter)
+
+        if file:
+            self.lib_chapters.set_open_save_dir(file)
+
+        return file
 
 
 class ChaptersTableModel(QAbstractTableModel):
