@@ -42,26 +42,26 @@ __all__ = ["APPLICATION_NAME", "APPLICATION_VERSION", "HOMEPAGE", "DOCUMENTATION
 
 
 class LibChapters:
-    def __init__(self, listener: AbstractLibChaptersListener):
+    def __init__(self, listener: AbstractLibChaptersListener) -> None:
         self.listener = listener
         self.mp3_data: Optional[BytesIO] = None
 
-    def encode_wav_file(self, path_to_wav_file: str):
+    def encode_wav_file(self, path_to_wav_file: str) -> None:
         run_async(lambda: self.__encode_file(path_to_wav_file))
 
-    def read_metadata_from_wav_file(self, path_to_wav_file: str):
+    def read_metadata_from_wav_file(self, path_to_wav_file: str) -> None:
         run_async(lambda: self.__read_metadata_from_wav_file(path_to_wav_file))
 
-    def read_metadata_from_mp3_file(self, path_to_mp3_file: str):
+    def read_metadata_from_mp3_file(self, path_to_mp3_file: str) -> None:
         run_async(lambda: self.__read_metadata_from_mp3_file(path_to_mp3_file))
 
-    def write_metadata_to_file(self, meta_data: MetaData, path_to_mp3_file: str,):
+    def write_metadata_to_file(self, meta_data: MetaData, path_to_mp3_file: str,) -> None:
         run_async(lambda: self.__write_metadata_to_file(meta_data, path_to_mp3_file))
 
-    def write_mp3_data_with_metadata(self, metadata: MetaData, path_to_output: str):
+    def write_mp3_data_with_metadata(self, metadata: MetaData, path_to_output: str) -> None:
         run_async(lambda: self.__write_mp3_data_with_metadata(metadata, path_to_output))
 
-    def copy_mp3_with_metadata(self, path_to_input_mp3: str, path_to_output_mp3: str, metadata: MetaData):
+    def copy_mp3_with_metadata(self, path_to_input_mp3: str, path_to_output_mp3: str, metadata: MetaData) -> None:
         run_async(lambda: self.__copy_mp3_with_metadata(path_to_input_mp3, path_to_output_mp3, metadata))
 
     def get_open_save_dir(self) -> str:
@@ -76,13 +76,13 @@ class LibChapters:
         prefs_dict["open_save_dir"] = location
         self.__save_prefs_dict(prefs_dict)
 
-    def __encode_file(self, path_to_wav_file: str):
+    def __encode_file(self, path_to_wav_file: str) -> None:
         self.listener.encode_started()
         lame = Lame(self.listener)
         self.mp3_data = lame.encode(path_to_wav_file)
         self.listener.encode_complete()
 
-    def __read_metadata_from_wav_file(self, path_to_wav_file):
+    def __read_metadata_from_wav_file(self, path_to_wav_file) -> None:
         self.listener.read_metadata_started()
         episode_number, episode_title = self.__guess_podcast_info_from_filename(path_to_wav_file)
         chapters = self.__read_chapters_from_wav_file(path_to_wav_file)
@@ -90,7 +90,7 @@ class LibChapters:
                                                       episode_title=episode_title,
                                                       chapters=chapters))
 
-    def __read_metadata_from_mp3_file(self, path_to_mp3_file: str):
+    def __read_metadata_from_mp3_file(self, path_to_mp3_file: str) -> None:
         self.listener.read_metadata_started()
         with open(path_to_mp3_file, "rb") as mp3_file:
             tags = id3.ID3(mp3_file)
@@ -150,7 +150,7 @@ class LibChapters:
         wav_file.close()
         return chapters
 
-    def __write_metadata_to_file(self, metadata: MetaData, path_to_mp3_file: str,):
+    def __write_metadata_to_file(self, metadata: MetaData, path_to_mp3_file: str) -> None:
         self.listener.write_mp3_file_started()
         if os.path.exists(path_to_mp3_file):
             tags = self.__get_tags(metadata)
@@ -159,7 +159,7 @@ class LibChapters:
 
         self.listener.write_mp3_file_complete(path_to_mp3_file)
 
-    def __write_mp3_data_with_metadata(self, metadata: MetaData, path_to_output: str):
+    def __write_mp3_data_with_metadata(self, metadata: MetaData, path_to_output: str) -> None:
         self.listener.write_mp3_file_started()
         tags = self.__get_tags(metadata)
         tags.save(self.mp3_data)
@@ -174,7 +174,7 @@ class LibChapters:
 
         self.listener.write_mp3_file_complete(path_to_output)
 
-    def __copy_mp3_with_metadata(self, path_to_input_mp3: str, path_to_output_mp3: str, metadata: MetaData):
+    def __copy_mp3_with_metadata(self, path_to_input_mp3: str, path_to_output_mp3: str, metadata: MetaData) -> None:
         self.listener.write_mp3_file_started()
         tags = self.__get_tags(metadata)
         if os.path.exists(path_to_input_mp3):
@@ -305,7 +305,7 @@ class LibChapters:
         return int((samples / wav_file.getframerate()) * 1000)
 
     @staticmethod
-    def __skip_unknown_chunk(fid: IO[bytes]):
+    def __skip_unknown_chunk(fid: IO[bytes]) -> None:
         data = fid.read(4)
         size = struct.unpack('<i', data)[0]
         if bool(size & 1):
@@ -328,7 +328,7 @@ class LibChapters:
 
 
 class Chapter:
-    def __init__(self, start: int = 0, end: int = 0, name: str = ""):
+    def __init__(self, start: int = 0, end: int = 0, name: str = "") -> None:
         self.start: int = start
         self.end: int = end
         self.name: str = name
@@ -343,40 +343,40 @@ class MetaData(NamedTuple):
 
 class AbstractLibChaptersListener(ABC):
     @abstractmethod
-    def encode_started(self):
+    def encode_started(self) -> None:
         ...
 
     @abstractmethod
-    def encode_update(self, progress: int):
+    def encode_update(self, progress: int) -> None:
         ...
 
     @abstractmethod
-    def encode_complete(self):
+    def encode_complete(self) -> None:
         ...
 
     @abstractmethod
-    def read_metadata_started(self):
+    def read_metadata_started(self) -> None:
         ...
 
     @abstractmethod
-    def read_metadata_complete(self, metadata: MetaData):
+    def read_metadata_complete(self, metadata: MetaData) -> None:
         ...
 
     @abstractmethod
-    def write_mp3_file_started(self):
+    def write_mp3_file_started(self) -> None:
         ...
 
     @abstractmethod
-    def write_mp3_file_progress(self, progress: int):
+    def write_mp3_file_progress(self, progress: int) -> None:
         ...
 
     @abstractmethod
-    def write_mp3_file_complete(self, path_to_mp3: str):
+    def write_mp3_file_complete(self, path_to_mp3: str) -> None:
         ...
 
 
 class ApplicationVersion:
-    def __init__(self, year: int, update: int):
+    def __init__(self, year: int, update: int) -> None:
         self.year = year
         self.update = update
 
@@ -394,12 +394,12 @@ class ApplicationVersion:
         return ApplicationVersion(int(year), int(update))
 
     # override
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.year}.{self.update}"
 
 
 class UpdateChecker:
-    def __init__(self, listener: AbstractUpdateCheckerListener):
+    def __init__(self, listener: AbstractUpdateCheckerListener) -> None:
         self.listener = listener
 
     def check_for_updates(self, current_version: ApplicationVersion) -> None:
@@ -420,15 +420,15 @@ class UpdateChecker:
 
 class AbstractUpdateCheckerListener(ABC):
     @abstractmethod
-    def update_available(self):
+    def update_available(self) -> None:
         ...
 
     @abstractmethod
-    def no_update_available(self):
+    def no_update_available(self) -> None:
         ...
 
 
-def run_async(fn: Callable):
+def run_async(fn: Callable) -> None:
     thread = Thread(target=fn)
     thread.daemon = True
     thread.start()
@@ -452,7 +452,7 @@ ISSUES = GITHUB + "issues"
 
 
 class Lame:
-    def __init__(self, listener: AbstractLibChaptersListener):
+    def __init__(self, listener: AbstractLibChaptersListener) -> None:
         self.listener = AggregateListener(listener)
         path_to_lame = Path(__file__).parent / "lib" / "lame.exe"
 
@@ -550,7 +550,7 @@ class Lame:
 
 
 class AggregateListener:
-    def __init__(self, wrapped_listener: AbstractLibChaptersListener):
+    def __init__(self, wrapped_listener: AbstractLibChaptersListener) -> None:
         self.wrapped_listener = wrapped_listener
         self.progress_dict: Dict[str, int] = dict()
 

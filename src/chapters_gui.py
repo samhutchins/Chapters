@@ -30,7 +30,7 @@ from libchapters import Chapter, MetaData, LibChapters, AbstractLibChaptersListe
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self) -> None:
         QMainWindow.__init__(self)
         self.lib_chapters = self.__create_libchapters()
         self.current_file: Optional[str] = None
@@ -97,7 +97,7 @@ class MainWindow(QMainWindow):
 
         return center_widget
 
-    def __create_menu(self):
+    def __create_menu(self) -> None:
         menu_bar = self.menuBar()
         file_menu = menu_bar.addMenu("File")
 
@@ -132,39 +132,39 @@ class MainWindow(QMainWindow):
         about_action = help_menu.addAction("About...")
         about_action.triggered.connect(self.__show_about_dialog)
 
-    def __create_status_bar(self):
+    def __create_status_bar(self) -> None:
         status_bar = self.statusBar()
         status_bar.addPermanentWidget(self.progress_bar)
 
-    def __import_audio(self):
+    def __import_audio(self) -> None:
         file = self.__show_open_dialog("*.wav")
         if file:
             self.__set_current_file(file, "wav")
             self.lib_chapters.read_metadata_from_wav_file(file)
             self.lib_chapters.encode_wav_file(file)
 
-    def __open_file(self):
+    def __open_file(self) -> None:
         file = self.__show_open_dialog("*.mp3")
         if file:
             self.__set_current_file(file, "mp3")
             self.lib_chapters.read_metadata_from_mp3_file(file)
 
-    def __encode_started(self):
+    def __encode_started(self) -> None:
         self.progress_bar.setValue(0)
         self.statusBar().showMessage("Importing file...")
 
-    def __encode_progress(self, progress: int):
+    def __encode_progress(self, progress: int) -> None:
         self.progress_bar.setValue(progress)
 
-    def __encode_complete(self):
+    def __encode_complete(self) -> None:
         self.centralWidget().setDisabled(False)
         self.menuBar().setDisabled(False)
         self.statusBar().showMessage("Import complete")
 
-    def __read_metadata_started(self):
+    def __read_metadata_started(self) -> None:
         self.chapters_table_view.setDisabled(True)
 
-    def __read_metadata_complete(self, metadata: MetaData):
+    def __read_metadata_complete(self, metadata: MetaData) -> None:
         self.chapters_table_view.setDisabled(False)
         if metadata.podcast_title:
             self.podcast_title.setText(metadata.podcast_title)
@@ -186,7 +186,7 @@ class MainWindow(QMainWindow):
         else:
             self.chapters_table_model.clear_chapters()
 
-    def __save_current_file(self):
+    def __save_current_file(self) -> None:
         if self.current_file:
             meta_data = MetaData(
                 podcast_title=self.podcast_title.text(),
@@ -201,7 +201,7 @@ class MainWindow(QMainWindow):
             elif self.current_file_type == "mp3":
                 self.lib_chapters.write_metadata_to_file(meta_data, self.current_file)
 
-    def __save_current_file_as(self):
+    def __save_current_file_as(self) -> None:
         if self.current_file:
             output_file = self.__show_save_dialog("*.mp3")
             if output_file:
@@ -216,26 +216,26 @@ class MainWindow(QMainWindow):
                 elif self.current_file_type == "mp3":
                     self.lib_chapters.copy_mp3_with_metadata(self.current_file, output_file, meta_data)
 
-    def __write_mp3_started(self):
+    def __write_mp3_started(self) -> None:
         self.menuBar().setDisabled(True)
         self.centralWidget().setDisabled(True)
         self.progress_bar.setValue(0)
         self.statusBar().showMessage("Saving MP3...")
 
-    def __write_mp3_progress(self, progress: int):
+    def __write_mp3_progress(self, progress: int) -> None:
         self.progress_bar.setValue(progress)
 
-    def __write_mp3_complete(self, path_to_mp3: str):
+    def __write_mp3_complete(self, path_to_mp3: str) -> None:
         self.menuBar().setDisabled(False)
         self.centralWidget().setDisabled(False)
         self.__set_current_file(path_to_mp3, "mp3")
         self.statusBar().showMessage("Save complete")
 
-    def __show_about_dialog(self):
+    def __show_about_dialog(self) -> None:
         about_dialog = AboutDialog(self)
         about_dialog.show()
 
-    def __set_current_file(self, current_file: str, current_file_type: str):
+    def __set_current_file(self, current_file: str, current_file_type: str) -> None:
         self.current_file = current_file
         self.current_file_type = current_file_type
         self.setWindowTitle(f"{libchapters.APPLICATION_NAME} - {os.path.basename(current_file)}")
@@ -262,7 +262,7 @@ class MainWindow(QMainWindow):
 
 
 class ChaptersTableModel(QAbstractTableModel):
-    def __init__(self, table_view: QTableView):
+    def __init__(self, table_view: QTableView) -> None:
         QAbstractTableModel.__init__(self)
         self.table_view = table_view
         self.__chapters: List[Chapter] = list()
@@ -272,18 +272,18 @@ class ChaptersTableModel(QAbstractTableModel):
             TableColumn("Name", self.__get_name, self.__get_name, self.__set_name)
         ]
 
-    def set_chapters(self, chapters: List[Chapter]):
+    def set_chapters(self, chapters: List[Chapter]) -> None:
         self.clear_chapters()
         self.beginInsertRows(QModelIndex(), 0, len(chapters) - 1)
         self.__chapters = list(chapters)
         self.endInsertRows()
 
-    def add_chapter(self):
+    def add_chapter(self) -> None:
         self.beginInsertRows(QModelIndex(), len(self.__chapters) - 1, len(self.__chapters) - 1)
         self.__chapters.append(Chapter())
         self.endInsertRows()
 
-    def remove_selected_chapters(self):
+    def remove_selected_chapters(self) -> None:
         selected_indexes: List[QModelIndex] = self.table_view.selectedIndexes()
         rows: List[int] = [index.row() for index in selected_indexes]
         rows.sort(reverse=True)
@@ -293,7 +293,7 @@ class ChaptersTableModel(QAbstractTableModel):
                 del self.__chapters[row]
                 self.endRemoveRows()
 
-    def clear_chapters(self):
+    def clear_chapters(self) -> None:
         self.beginRemoveRows(QModelIndex(), 0, len(self.__chapters) - 1)
         self.__chapters = list()
         self.endRemoveRows()
@@ -368,7 +368,7 @@ class ChaptersTableModel(QAbstractTableModel):
         return chapter.name
 
     @staticmethod
-    def __set_name(chapter: Chapter, new_name: str):
+    def __set_name(chapter: Chapter, new_name: str) -> None:
         chapter.name = new_name
 
     milliseconds_in_hour = 3600000
@@ -405,7 +405,7 @@ class ChaptersTableModel(QAbstractTableModel):
 
 
 class AboutDialog(QDialog):
-    def __init__(self, parent: MainWindow):
+    def __init__(self, parent: MainWindow) -> None:
         QDialog.__init__(self, parent, Qt.WindowCloseButtonHint)
         update_checker_listener = UpdateCheckerListener()
         update_checker_listener.signals.update_available.connect(self.update_available)
@@ -445,19 +445,19 @@ class AboutDialog(QDialog):
         self.setLayout(layout)
 
     # override
-    def show(self):
+    def show(self) -> None:
         super().show()
         self.raise_()
         self.activateWindow()
 
-    def check_for_updates(self):
+    def check_for_updates(self) -> None:
         self.update_checker.check_for_updates(libchapters.APPLICATION_VERSION)
 
-    def update_available(self):
+    def update_available(self) -> None:
         self.check_for_updates_button.setText("Update available!")
         QDesktopServices.openUrl(libchapters.HOMEPAGE)
 
-    def no_update_available(self):
+    def no_update_available(self) -> None:
         self.check_for_updates_button.setText("Up to date")
 
 
@@ -482,28 +482,28 @@ class EncoderListenerSignals(QObject):
 class LibChaptersListener(AbstractLibChaptersListener):
     signals = EncoderListenerSignals()
 
-    def encode_started(self):
+    def encode_started(self) -> None:
         self.signals.encode_started.emit()
 
-    def encode_update(self, progress: int):
+    def encode_update(self, progress: int) -> None:
         self.signals.encode_progress.emit(progress)
 
-    def encode_complete(self):
+    def encode_complete(self) -> None:
         self.signals.encode_complete.emit()
 
-    def read_metadata_started(self):
+    def read_metadata_started(self) -> None:
         self.signals.read_metadata_started.emit()
 
-    def read_metadata_complete(self, metadata: MetaData):
+    def read_metadata_complete(self, metadata: MetaData) -> None:
         self.signals.read_metadata_complete.emit(metadata)
 
-    def write_mp3_file_started(self):
+    def write_mp3_file_started(self) -> None:
         self.signals.write_mp3_file_started.emit()
 
-    def write_mp3_file_progress(self, progress: int):
+    def write_mp3_file_progress(self, progress: int) -> None:
         self.signals.write_mp3_file_progress.emit(progress)
 
-    def write_mp3_file_complete(self, path_to_mp3: str):
+    def write_mp3_file_complete(self, path_to_mp3: str) -> None:
         self.signals.write_mp3_file_complete.emit(path_to_mp3)
 
 
@@ -515,10 +515,10 @@ class UpdateCheckerSignals(QObject):
 class UpdateCheckerListener(AbstractUpdateCheckerListener):
     signals = UpdateCheckerSignals()
 
-    def update_available(self):
+    def update_available(self) -> None:
         self.signals.update_available.emit()
 
-    def no_update_available(self):
+    def no_update_available(self) -> None:
         self.signals.no_update_available.emit()
 
 
